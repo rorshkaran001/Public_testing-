@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Device B - Camera Viewer</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        header { text-align: center; padding: 20px 0; margin-bottom: 20px; }
+        h1 { font-size: 1.8rem; margin-bottom: 10px; }
+        .status-card {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .connection-status {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+        .connected { background: #4CAF50; box-shadow: 0 0 10px #4CAF50; }
+        .disconnected { background: #f44336; }
+        .connecting { background: #ff9800; animation: pulse 1.5s infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .video-container {
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            min-height: 300px;
+        }
+        #cameraFeed {
+            width: 100%;
+            display: block;
+        }
+        .controls {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        button {
+            background: white;
+            color: #667eea;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            margin: 5px;
+            width: calc(50% - 10px);
+        }
+        .button-group {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📱 Device B - Camera Viewer</h1>
+            <p>Viewing Live Feed from Device A</p>
+        </header>
+        
+        <div class="status-card">
+            <div class="connection-status">
+                <div id="statusDot" class="status-dot connecting"></div>
+                <div id="statusText">Connecting to Device A...</div>
+            </div>
+            <div id="connectionInfo" style="font-size: 0.9rem; opacity: 0.8;">
+                Loading connection info...
+            </div>
+        </div>
+        
+        <div class="video-container">
+            <img id="cameraFeed" src="" alt="Live Camera Feed">
+        </div>
+        
+        <div class="controls">
+            <div class="button-group">
+                <button onclick="requestFrame()">🔄 Request Frame</button>
+                <button onclick="toggleFullscreen()">🔍 Fullscreen</button>
+                <button onclick="reconnect()">📶 Reconnect</button>
+                <button onclick="showQR()">📱 Show QR</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let isConnected = false;
+        let frameInterval;
+        
+        // Connect to server
+        socket.on('connect', () => {
+            console.log('Connected to server as viewer');
+            updateStatus('connected');
+            socket.emit('join-viewer');
+            
+            // Start requesting frames
+            startFrameRequests();
+        });
+        
+        // Handle frame updates
+        socket.on('frame-update', (data) => {
+            const feed = document.getElementById('cameraFeed');
+            feed.src = data.frame;
+            updateStatus('connected');
+        });
+        
+        // Update viewer count
+        socket.on('viewer-count', (count) => {
+            document.getElementById('connectionInfo').textContent = 
+                `${count} viewer${count !== 1 ? 's' : ''} connected | Real-time stream`;
+        });
+        
+        // Connection error
+        socket.on('connect_error', () => {
+            updateStatus('disconnected');
+        });
+        
+        // Disconnect
+        socket.on('disconnect', () => {
+            updateStatus('disconnected');
+            stopFrameRequests();
+        });
+        
+        // Update connection status
+        function updateStatus(status) {
+            const dot = document.getElementById('statusDot');
+            const text = document.getElementById('statusText');
+            
+            dot.className = 'status-dot ' + status;
+            
+            switch(status) {
+                case 'connected':
+                    text.textContent = 'Connected to Device A';
+                    isConnected = true;
+                    break;
+                case 'disconnected':
+                    text.textContent = 'Disconnected from Device A';
+                    isConnected = false;
+                    break;
+                case 'connecting':
+                    text.textContent = 'Connecting to Device A...';
+                    isConnected = false;
+                    break;
+            }
+        }
+        
+        // Request a frame from server
+        function requestFrame() {
+            if (isConnected) {
+                socket.emit('request-frame');
+            }
+        }
+        
+        // Start requesting frames at target FPS
+        function startFrameRequests() {
+            const fps = 12;
+            const interval = 1000 / fps;
+            
+            if (frameInterval) clearInterval(frameInterval);
+            
+            frameInterval = setInterval(() => {
+                if (isConnected) {
+                    socket.emit('request-frame');
+                }
+            }, interval);
+        }
+        
+        // Stop frame requests
+        function stopFrameRequests() {
+            if (frameInterval) {
+                clearInterval(frameInterval);
+                frameInterval = null;
+            }
+        }
+        
+        // Reconnect to server
+        function reconnect() {
+            updateStatus('connecting');
+            socket.connect();
+        }
+        
+        // Toggle fullscreen
+        function toggleFullscreen() {
+            const container = document.querySelector('.video-container');
+            if (!document.fullscreenElement) {
+                container.requestFullscreen().catch(err => {
+                    console.log(`Error attempting to enable fullscreen: ${err.message}`);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        }
+        
+        // Show QR code for URL
+        function showQR() {
+            const url = window.location.href.replace('/viewer.html', '');
+            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
+            
+            const qrWindow = window.open('', '_blank');
+            qrWindow.document.write(`
+                <html>
+                <head><title>Scan QR Code</title></head>
+                <body style="text-align: center; padding: 20px;">
+                    <h2>Scan to join stream</h2>
+                    <img src="${qrUrl}" alt="QR Code">
+                    <p>${url}</p>
+                </body>
+                </html>
+            `);
+        }
+        
+        // Auto-reconnect on page visibility change
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && !isConnected) {
+                reconnect();
+            }
+        });
+        
+        // Initial connection
+        updateStatus('connecting');
+    </script>
+</body>
+  </html>
