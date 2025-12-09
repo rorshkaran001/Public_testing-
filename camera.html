@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Device A - Camera Server</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        header { text-align: center; padding: 20px 0; margin-bottom: 20px; }
+        h1 { font-size: 1.8rem; margin-bottom: 10px; }
+        .status-card {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+        .status-item { text-align: center; }
+        .status-label { font-size: 0.9rem; opacity: 0.8; }
+        .status-value { font-size: 1.2rem; font-weight: bold; }
+        .video-container {
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            position: relative;
+            min-height: 300px;
+        }
+        #cameraFeed {
+            width: 100%;
+            display: block;
+        }
+        .instructions {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        .url-box {
+            background: rgba(0,0,0,0.3);
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            word-break: break-all;
+            font-family: monospace;
+        }
+        button {
+            background: white;
+            color: #667eea;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            margin: 5px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📷 Device A - Camera Server</h1>
+            <p>Live Camera Feed Streaming</p>
+        </header>
+        
+        <div class="status-card">
+            <div class="status-item">
+                <div class="status-label">Server Status</div>
+                <div id="serverStatus" class="status-value">Running</div>
+            </div>
+            <div class="status-item">
+                <div class="status-label">Connected Viewers</div>
+                <div id="clientCount" class="status-value">0</div>
+            </div>
+            <div class="status-item">
+                <div class="status-label">Stream FPS</div>
+                <div id="streamFPS" class="status-value">12</div>
+            </div>
+            <div class="status-item">
+                <div class="status-label">Server IP</div>
+                <div id="serverIP" class="status-value">Loading...</div>
+            </div>
+        </div>
+        
+        <div class="video-container">
+            <img id="cameraFeed" src="" alt="Live Camera Feed">
+        </div>
+        
+        <div class="instructions">
+            <h3>📋 How to View on Device B</h3>
+            <ol style="margin: 10px 0 20px 20px;">
+                <li>Connect Device B to Device A's hotspot</li>
+                <li>On Device B, open browser and go to:</li>
+            </ol>
+            <div id="viewerUrl" class="url-box">Loading URL...</div>
+            
+            <button onclick="refreshStatus()">🔄 Refresh Status</button>
+            <button onclick="shareURL()">📤 Share URL</button>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let serverIP = '';
+        
+        // Connect to server
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            updateStatus();
+        });
+        
+        // Update viewer count
+        socket.on('viewer-count', (count) => {
+            document.getElementById('clientCount').textContent = count;
+        });
+        
+        // Get server status
+        async function updateStatus() {
+            try {
+                const response = await fetch('/status');
+                const data = await response.json();
+                
+                document.getElementById('serverStatus').textContent = 'Running';
+                document.getElementById('streamFPS').textContent = data.fps;
+                document.getElementById('serverIP').textContent = data.ip;
+                serverIP = data.ip;
+                
+                const viewerUrl = `http://${data.ip}:${location.port}/viewer.html`;
+                document.getElementById('viewerUrl').textContent = viewerUrl;
+                
+            } catch (error) {
+                document.getElementById('serverStatus').textContent = 'Error';
+                console.error('Error fetching status:', error);
+            }
+        }
+        
+        // Share URL
+        function shareURL() {
+            const url = document.getElementById('viewerUrl').textContent;
+            if (navigator.share) {
+                navigator.share({
+                    title: 'Camera Stream URL',
+                    text: 'Join my camera stream:',
+                    url: url
+                });
+            } else {
+                navigator.clipboard.writeText(url);
+                alert('URL copied to clipboard!');
+            }
+        }
+        
+        // Refresh status
+        function refreshStatus() {
+            updateStatus();
+        }
+        
+        // Update camera feed (for demo)
+        function updateCameraFeed() {
+            const feed = document.getElementById('cameraFeed');
+            const timestamp = new Date().getTime();
+            feed.src = `data:image/svg+xml;base64,${btoa(`
+                <svg xmlns="http://www.w3.org/2000/svg" width="640" height="480">
+                    <rect width="100%" height="100%" fill="#1a1a2e"/>
+                    <rect x="${timestamp % 500}" y="${timestamp % 400}" 
+                          width="200" height="150" fill="#16213e" stroke="#0f3460" stroke-width="3"/>
+                    <text x="50" y="100" font-family="Arial" font-size="24" fill="#e94560">
+                        Camera Server Running
+                    </text>
+                    <text x="50" y="150" font-family="Arial" font-size="18" fill="#f1f1f1">
+                        ${new Date().toLocaleTimeString()} | IP: ${serverIP || 'Loading...'}
+                    </text>
+                </svg>
+            `)}`;
+        }
+        
+        // Initial load
+        updateStatus();
+        updateCameraFeed();
+        setInterval(updateCameraFeed, 1000);
+    </script>
+</body>
+</html>
